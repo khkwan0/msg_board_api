@@ -1,59 +1,134 @@
 var express = require('express');
 var router = express.Router();
+var ObjectId = require('mongodb').ObjectID;
+var fs = require('fs');
+var uuidv4 = require('uuid/v4');
 
 function dbFindOne(collection, fields) {
-    return new Promise((resolve, reject) => {
-        collection.findOne(fields, (err, result) => {
-            if (err) {
-                reject(err);
-            } else {
-                resolve(result);
-            }
-        });
+  return new Promise((resolve, reject) => {
+    collection.findOne(fields, (err, result) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(result);
+      }
     });
+  });
 }
 
 function dbFindMany(collection, fields, limit, sort) {
-    return new Promise((resolve, reject) => {
-        collection.find(fields, (err, result) => {
-            if (err) {
-                reject(err);
-            } else {
-                resolve(result);
-            }
-        });
-    });
+  return new Promise((resolve, reject) => {
+      collection.find(fields, (err, result) => {
+          if (err) {
+              reject(err);
+          } else {
+              resolve(result);
+          }
+      });
+  });
 }
 
 function checkIfNotEmpty(obj) {
-    return new Promise((resolve, reject) => {
-        if (obj == null) {
-            resolve('OK');
-        }
-        if (Object.keys(obj).length > 0) {
-            reject('EDUP');
-        } else {
-            resolve('OK');
-        }
-    });
+  return new Promise((resolve, reject) => {
+      if (obj == null) {
+          resolve('OK');
+      }
+      if (Object.keys(obj).length > 0) {
+          reject('EDUP');
+      } else {
+          resolve('OK');
+      }
+  });
 }
 
 function dbInsert(collection, obj) {
-    return new Promise((resolve, reject) => {
-        collection.insert(obj, (err, result) => {
-            if (err) {
-                reject(err);
-            } else {
-                resolve(result);
-            }
-        });
+  return new Promise((resolve, reject) => {
+      collection.insert(obj, (err, result) => {
+          if (err) {
+              reject(err);
+          } else {
+              resolve(result);
+          }
+      });
+  });
+}
+
+function dbUpdate(collection, obj, field) {
+  return new Promise((resolve, reject) => {
+    collection.update(obj, field, (err, result) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve(result);
+      }
     });
-};
-/*
-router.get('/', (req, res, next) => {
-    res.status(200).send('ok');
+  });
+}
+
+function generateUUID() {
+  return uuidv4();
+}
+
+router.post('/profile/save', (req, res, next) => {
+//  console.log(req.body);
+console.log(req.session);
+  if (typeof req.session.user !== 'undefined' && typeof req.body.raw !== 'undefined') {
+    let raw = req.body.raw;
+    let rawParts = raw.split(',');
+    let imageData = rawParts[1];
+    let rawMetaData = rawParts[0];
+    let rawMetaParts = rawMetaData.split(':');
+    let rawMetaParts2 = rawMetaParts[1].split(';');
+    let rawMetaParts3 = rawMetaParts2[0].split('/');
+    let imgType = rawMetaParts3[1];
+    console.log(imgType);
+    let uuid = generateUUID();
+    let newFileName = 'public/assets/users/avatars/'+uuid+'_profile'+'.'+imgType;
+
+    fs.writeFile(newFileName, imageData, 'base64', (err) => {
+      if (err) {
+        res.status(500).send(JSON.stringify(err));
+      } else {
+        newFileName = 'assets/users/avatars/'+uuid+'_profile'+'.'+imgType;
+        let Users = req.db.get('users');
+        dbUpdate(Users, {_id: new ObjectId(req.session.user._id)}, { $set: {profileURL: newFileName}})
+        .then((result) => {
+          let saveResult = {
+            status: 'OK',
+            filename: newFileName
+          }
+          req.session.user.profileURL = newFileName;
+          res.status(200).send(JSON.stringify(saveResult));
+        })
+        .catch((err) => {
+          res.status(500).send(JSON.stringify(err));
+        });
+      }
+    });
+  } else {
+    res.status(403).send('bad input');
+  }
 });
-*/
+
+router.post('/profile/upload', (req, res, next) => {
+//  console.log(req.files);
+  if (typeof req.session.user !== 'undefined' && typeof req.files.file !== 'undefined') {
+    let newFileName = 'public/assets/tmp/'+req.files.file.uuid+'_'+req.files.file.filename;
+    fs.rename(req.files.file.file, newFileName, (e) => {
+      if (e) {
+        res.status(500).send(JSON.stringify(e));
+      }
+      newFileName = 'assets/tmp/'+req.files.file.uuid+'_'+req.files.file.filename;
+      let result = {
+        status: 'OK',
+        filename: newFileName
+      }
+      res.status(200).send(JSON.stringify(result));
+    });
+  } else {
+    res.status(403).send(JSON.stringify(req));
+  }
+});
 
 router.get('/checksession', (req, res, next) => {
   let response = {
@@ -61,6 +136,11 @@ router.get('/checksession', (req, res, next) => {
   };
   if (typeof req.session.key !== 'undefined') {
     response.ok = 1;
+    response.user = {
+      uname: req.session.user.uname,
+      id: req.session.user._id,
+      profilePic: req.session.user.profileURL
+    }
   } 
   res.status(200).send(JSON.stringify(response));
 });
@@ -83,23 +163,42 @@ router.get('/getlatestposts', (req, res, next) => {
 });
 
 router.get('/getpost', (req, res, next) => {
-  let postid = req.body.postid;
-  let Posts = db.get('posts');
+  let postid = req.query.postid;
+  let Posts = req.db.get('posts');
   if (postid) {
     dbFindOne(Posts, {_id: postid})
     .then((result) => {
       res.status(200).send(JSON.stringify(result));
     })
     .catch((err) => {
+        console.log(err);
+        res.status(500).send(err);
     });
   } else {
+    res.status(403).send('Invalid request');
   }
+});
+
+router.get('/getcomments', (req, res, next) => {
+    if (req.query.postid) {
+      let collection = req.db.get('comments');
+      dbFindMany(collection, {parent_id: req.query.postid})
+      .then((result) => {
+        res.status(200).send(JSON.stringify(result));
+      })
+      .catch((err) => {
+        console.log(err);
+        res.status(500).send(err);
+      });
+    } else {
+      res.status(403).send();
+    }
 });
 
 router.post('/savepost', (req, res, next) => {
   let postSubj = req.body.subj;
   let postBody = req.body.post;
-  if (typeof req.session.user._id !== 'undefined ' && postSubj && postBody) {
+  if (typeof req.session.user !== 'undefined' && typeof req.session.user._id !== 'undefined ' && postSubj && postBody) {
     let toSave = {
       ts: new Date(),
       subj: postSubj,
@@ -107,9 +206,10 @@ router.post('/savepost', (req, res, next) => {
       review: 0,
       comments_enabled: 1,
       author_id: req.session.user._id,
-      author_name: req.session.user.uname
+      author_name: req.session.user.uname,
+      parent_id: req.body.parent_id
     }
-    let Posts = req.db.get('posts');
+    let Posts = (req.body.parent_id)?req.db.get('comments'):req.db.get('posts');
     dbInsert(Posts, toSave)
     .then((result) => {
         res.status(200).send(JSON.stringify(toSave));
@@ -119,6 +219,23 @@ router.post('/savepost', (req, res, next) => {
     });
   } else {
     res.status(403).send('Invalid Post data');
+  }
+});
+
+router.get('/getuser', (req, res, next) => {
+  let uid = req.query.uid;
+  if (uid) {
+    let Users = req.db.get('users');
+
+    dbFindOne(Users, {_id:new ObjectId(uid)})
+    .then((result) => {
+      res.status(200).send(JSON.stringify(result));
+    })
+    .catch((err) => {
+      res.status(500).send(err);
+    });
+  } else {
+    res.status(403).send('invalid parameters');
   }
 });
 
@@ -184,7 +301,10 @@ router.post('/login', (req, res, next) => {
             if (result) {
                 res_obj.err_no = 0;
                 res_obj.err_msg = 'OK';
-                res_obj.data = result;
+                res_obj.data = {
+                  uname: result.uname,
+                  id: result._id
+                }
                 req.session.key = uname;
                 req.session.user = result;
             } else {
