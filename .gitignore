@@ -2,3 +2,6 @@
 config.js
 /views
 package-lock.json
+/public/assets
+/public/images
+.*

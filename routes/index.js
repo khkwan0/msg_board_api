@@ -91,13 +91,13 @@ console.log(req.session);
       } else {
         newFileName = 'assets/users/avatars/'+uuid+'_profile'+'.'+imgType;
         let Users = req.db.get('users');
-        dbUpdate(Users, {_id: new ObjectId(req.session.user._id)}, { $set: {profileURL: newFileName}})
+        dbUpdate(Users, {_id: new ObjectId(req.session.user._id)}, { $set: {profilePpicURL: newFileName}})
         .then((result) => {
           let saveResult = {
             status: 'OK',
             filename: newFileName
           }
-          req.session.user.profileURL = newFileName;
+          req.session.user.profilePicURL = newFileName;
           res.status(200).send(JSON.stringify(saveResult));
         })
         .catch((err) => {
@@ -139,7 +139,7 @@ router.get('/checksession', (req, res, next) => {
     response.user = {
       uname: req.session.user.uname,
       id: req.session.user._id,
-      profilePic: req.session.user.profileURL
+      profilePicURL: req.session.user.profilePicURL
     }
   } 
   res.status(200).send(JSON.stringify(response));
@@ -303,10 +303,12 @@ router.post('/login', (req, res, next) => {
                 res_obj.err_msg = 'OK';
                 res_obj.data = {
                   uname: result.uname,
-                  id: result._id
+                  _id: result._id,
+                  id: result._id,
+                  profilePicURL: result.profilePicURL
                 }
                 req.session.key = uname;
-                req.session.user = result;
+                req.session.user = res_obj.data;
             } else {
                 res_obj.err_no = 1;
                 res_obj.err_msg = 'ENONE';
