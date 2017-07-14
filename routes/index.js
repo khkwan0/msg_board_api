@@ -53,9 +53,9 @@ function dbInsert(collection, obj) {
   });
 }
 
-function dbUpdate(collection, obj, field) {
+function dbUpdate(collection, selector, document, options) {
   return new Promise((resolve, reject) => {
-    collection.update(obj, field, (err, result) => {
+    collection.update(selector, document, options, (err, result) => {
       if (err) {
         reject(err);
       } else {
@@ -69,9 +69,64 @@ function generateUUID() {
   return uuidv4();
 }
 
+router.post('/checkname', (req, res, next) => {
+  if (req.body.uname) {
+    let Users = req.db.get('users');
+    dbFindOne(Users, {uname: req.body.uname})
+    .then((result) => {
+      let response = {};
+      if (result !== null) {
+        response.ok = 0; 
+      } else {
+        response.ok = 1;
+      }
+      res.status(200).send(JSON.stringify(response));
+    })
+    .catch((err) => {
+        console.log(err);
+        res.status(500).send(err);
+    });
+  }
+});
+
+router.post('/saveposture', (req, res, next) => {
+  if (typeof req.session.user !== 'undefined' && typeof req.body !== 'undefined' && typeof req.body.post_id !=='undefined' && typeof req.body.posture !== 'undefined') {
+    let postId = req.body.post_id;
+    let posture = req.body.posture;
+    if (postId) {
+      let Likes = req.db.get('likes');
+      let target = {};
+      if (posture === 'like') {
+        target = {
+          likers: req.session.user.uname
+        }
+      } else if(posture === 'dislike') {
+        target = {
+          dislikers: req.session.user.uname
+        }
+      }
+      dbUpdate(Likes, {post_id: postId}, { $addToSet: target}, { upsert: true})
+      .then((result) => {
+        res.status(200).send(result);
+      })
+      . then(() => {
+        if (posture === 'like') {
+          dbUpdate(Likes, {post_id: postId}, { $pull: {dislikers: req.session.user.uname}},null);
+        } else if (posture === 'dislike') {
+          dbUpdate(Likes, {post_id: postId}, { $pull: {likers: req.session.user.uname}},null);
+        }
+      })
+      .catch((err) => {
+        console.log(err);
+        res.status(500).send(err);
+      });
+    }
+  } else {
+    res.status(403).send('invalid input');
+  }
+});
+
 router.post('/profile/save', (req, res, next) => {
-//  console.log(req.body);
-console.log(req.session);
   if (typeof req.session.user !== 'undefined' && typeof req.body.raw !== 'undefined') {
     let raw = req.body.raw;
     let rawParts = raw.split(',');
@@ -206,6 +261,7 @@ router.post('/savepost', (req, res, next) => {
       review: 0,
       comments_enabled: 1,
       author_id: req.session.user._id,
+      author_avatar: req.session.user.profilePicURL,
       author_name: req.session.user.uname,
       parent_id: req.body.parent_id
     }
@@ -227,8 +283,9 @@ router.get('/getuser', (req, res, next) => {
   if (uid) {
     let Users = req.db.get('users');
 
-    dbFindOne(Users, {_id:new ObjectId(uid)})
+    Users.findOne({_id:new ObjectId(uid)}, '-password')
     .then((result) => {
+      console.log(result);
       res.status(200).send(JSON.stringify(result));
     })
     .catch((err) => {
@@ -242,6 +299,7 @@ router.get('/getuser', (req, res, next) => {
 router.post('/register', (req, res, next) => {
     let uname = req.body.uname;
     let pwd = req.body.pwd;
+    let email = req.body.email;
     if (uname && pwd) {
         Users = req.db.get('users');
 
