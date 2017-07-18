@@ -69,6 +69,47 @@ function generateUUID() {
   return uuidv4();
 }
 
+router.post('/unfollow', (req, res, next) => {
+  if (req.body.target) {
+    let Follow = req.db.get('follow');
+    Follow.remove({target_id: req.body.target._id, user_id: req.session.user._id.toString()}, { multi: false})
+    .then((result) => {
+      if (result.result.n) {
+        res.status(200).send(JSON.stringify(result.result));
+      } else {
+        res.status(403).send(JSON.stringify(result.result));
+      }
+    })
+    .catch((err) => {
+      console.log(err.stack);
+      res.status(500).send(err);
+    });
+  } else {
+    res.status(403).send('Invalid Input');
+  }
+});
+
+router.post('/follow', (req, res, next) => {
+  if (req.body.target) {
+    let Follow = req.db.get('follow');
+    Follow.update({target_id:req.body.target._id}, { target_id:req.body.target._id, user_id: req.session.user._id.toString(), user_name: req.session.user.uname}, { upsert: true})
+    .then((result) => {
+        console.log(result);
+      if (result.nModified || result.upserted.length) {
+        res.status(200).send(JSON.stringify(result));
+      } else {
+        res.status(403).send(JSON.stringify(result));
+      }
+    })
+    .catch((err) => {
+      console.log(err.stack);
+      res.status(500).send(err);
+    });
+  } else {
+    res.status(403).send('Invalid input');
+  }
+});
+
 router.post('/checkname', (req, res, next) => {
   if (req.body.uname) {
     let Users = req.db.get('users');
@@ -105,7 +146,7 @@ router.post('/saveposture', (req, res, next) => {
           dislikers: req.session.user.uname
         }
       }
-      dbUpdate(Likes, {post_id: postId}, { $addToSet: target}, { upsert: true})
+      dbUpdate(Likes, {post_id: postId}, { $addToSet: target }, { upsert: true})
       .then((result) => {
         res.status(200).send(result);
       })
@@ -194,6 +235,7 @@ router.get('/checksession', (req, res, next) => {
     response.user = {
       uname: req.session.user.uname,
       id: req.session.user._id,
+      _id: req.session.user._id,
       profilePicURL: req.session.user.profilePicURL
     }
   } 
@@ -282,13 +324,29 @@ router.get('/getuser', (req, res, next) => {
   let uid = req.query.uid;
   if (uid) {
     let Users = req.db.get('users');
-
+    let Follow = req.db.get('follow');
+    let toSend = {};
     Users.findOne({_id:new ObjectId(uid)}, '-password')
     .then((result) => {
-      console.log(result);
-      res.status(200).send(JSON.stringify(result));
+      if (result) {
+        toSend = result;
+        if (req.session.user && req.session.user._id.toString() !== uid) {
+          toSend.followed = false;
+          return Follow.findOne({target_id: uid, user_id: req.session.user._id.toString()});
+        } else {
+          res.status(200).send(JSON.stringify(toSend));
+          next();
+        }
+      }
+    })
+    .then((result) => {
+      if (result) {
+        toSend.followed = true
+      }
+      res.status(200).send(JSON.stringify(toSend));
     })
     .catch((err) => {
+      console.log(err.stack);
       res.status(500).send(err);
     });
   } else {
